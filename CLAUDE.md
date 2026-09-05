@@ -33,6 +33,122 @@ unusual figures, and areas needing human review.
 Cutting across all ten: **the page and section supporting every important
 AI-generated answer.**
 
+## Priority: the core must be excellent before the edges are broad
+
+All ten requirements ship — the list is fixed. But they are **not equally
+important**, and effort is allocated accordingly.
+
+**Tier 1 — the project is judged on these.** Executive summaries (1),
+question answering (2), and citations (5). The bar is *correct answers that
+are not stupid, with sources*. Quality here beats every other feature.
+
+**Tier 2 — substantial features, normal quality bar.** Financial indicator
+extraction (3), risk factors (4), missing sections (7), conflicting figures
+(8), year-over-year changes (6), the preliminary report (10).
+
+**Tier 3 — build it, do not gold-plate it.** Comparison (9), both modes.
+Required, but the last place to spend an extra week.
+
+Two consequences that change the plan:
+
+- **Retrieval quality is the whole ballgame.** A wrong or vague answer is worse
+  than useless for a regulator, and it costs reviewer time rather than saving
+  it. Months 2 and 3 carry the most weight of any months in the project.
+- **Evaluation starts in Month 2, not Month 9.** "Answers that are not stupid"
+  cannot be improved unless it is measured. A golden question set is built
+  early and re-run continuously as a regression test. Month 9 then becomes
+  final measurement and write-up rather than first measurement.
+
+### Answer behaviour — decided
+
+**Executive summary is layered.** A ~300-word overview first, with any part
+expandable into detail on request. The reviewer controls the depth. A four-page
+summary of a 195-page document has not saved anyone much time.
+
+**Partial answers are given, with the gap named.** When the prospectus only
+partly answers a question, the assistant states the supported part with its
+citation and then says explicitly what the document does not state. It does not
+refuse outright — over-refusing wastes reviewer time as surely as a wrong
+answer — and it never fills the gap with an invented figure. "Not found in the
+document" remains correct when nothing supports an answer at all.
+
+### The golden question set
+
+There are no CMA reviewers available: the users during development are the
+student and the examining professors. The question set is therefore
+**self-authored**, and should be written as *the questions an examiner would
+ask in the defence*, plus deliberately hard ones. Roughly 40 questions, each
+recorded with its expected answer, expected page(s) and section, in four
+categories:
+
+1. **Factual lookup** — stated plainly on one page.
+2. **Figure lookup** — a specific number, unit and year.
+3. **Synthesis** — requires combining two or more places in the document.
+4. **Absent information** — the document genuinely does not say. The correct
+   behaviour is refusal, and these catch invention, which is the single most
+   dangerous failure mode.
+
+Built in Month 2 alongside retrieval, re-run after every change to chunking,
+retrieval or prompts. Its purpose is regression detection, not a final grade:
+it tells you whether a change made the system better or worse, which is
+otherwise impossible to know.
+
+### Required-disclosures checklist
+
+The user can obtain the **official CMA disclosure requirements for a sukuk
+offering**. Requirement 7 must be built against that real list rather than a
+list inferred from the sample document's own table of contents — an inferred
+checklist can only ever find sections the document already has. Obtain it
+before Month 7; earlier is better, as it also informs what the Month 3 summary
+should highlight.
+
+## The product: a chat assistant, not a dashboard
+
+**The objective is to reduce CMA reviewer time.** Every design decision is
+judged against that. A tool with six screens to learn does not save anyone
+time.
+
+So the final product has the shape of Claude or ChatGPT — a conversation with
+an assistant that knows the prospectus — not a web app with a navigation bar:
+
+- The reviewer **asks in plain English and gets a real answer in plain
+  English.** The citation is an annotation *on* the answer, not a substitute
+  for it. "Not found in the document" is still a valid answer; "here is page
+  88, go read it" is not.
+- **It speaks first.** As soon as a document finishes ingesting, the assistant
+  opens with a briefing: findings, missing information, unusual figures,
+  conflicts, and areas requiring human review. The reviewer should not have to
+  know what to ask in order to be warned.
+- **Modes, not screens.** Comparison is a mode within the same interface — the
+  way Claude places Chat, Cowork and Code beside one another — not a separate
+  window the reviewer navigates to. The conversation is continuous across
+  modes.
+- **The PDF sits beside the chat.** Clicking a citation opens the source page
+  in a pane next to the conversation, so verification never costs a context
+  switch.
+
+**Comparison has two equally required modes**, both answered inside the
+conversation rather than on a separate screen:
+
+1. **Same company, different time periods** — this year's submission against
+   last year's. What changed, what was removed, which figures moved.
+2. **Different companies, same sector** — this bank's sukuk prospectus against
+   another Saudi bank's.
+
+**Reviewers have individual accounts and their conversations are saved**, so a
+review can be picked up where it was left. The uploaded prospectuses form a
+**library**: any conversation can pull in one document or several, which is
+also what makes comparison work without a special second window.
+
+### "Learning" the prospectus means indexing, not training
+
+The assistant is **not fine-tuned** on prospectus data. Fine-tuning dissolves
+text into model weights, and weights have no page numbers — which makes it
+fundamentally incompatible with Rule 1. Instead the document is read, indexed
+and retrieved from, so every sentence the assistant produces stays traceable to
+a page a reviewer can open. The reviewer's experience is an assistant that
+knows the document; the mechanism is retrieval.
+
 ---
 
 ## Standing rules
@@ -88,9 +204,10 @@ gets deferred to a vague "later" where it risks never being built.
 ### The full-stack picture
 
 ```
-  BROWSER
+  BROWSER — a chat, not a dashboard
   React + Tailwind
-  library · upload · dashboard · ask · financials · risks · compare · report
+  one conversation · modes: Ask / Review / Compare · PDF pane beside the chat
+  proactive opening briefing when a document finishes ingesting
         |  HTTP / JSON  (streaming for answers)
         v
   BACKEND                                     FastAPI (Python)
@@ -193,7 +310,7 @@ rewriting everything.
 | Frontend | React + Vite + Tailwind | **needs Node.js — not yet installed** |
 | PDF viewer | PDF.js in the browser | so citations can jump to the page |
 | LLM | Claude API, `claude-opus-5`, `anthropic` Python SDK | |
-| Embeddings | dedicated embedding model — chosen in Month 2 | local open model vs. hosted |
+| Embeddings | dedicated embedding model — chosen in Month 2 | English-only; local open model vs. hosted |
 | Auth | JWT sessions, reviewer/admin roles | |
 | Packaging | Docker + docker-compose | for the final deployment |
 | Testing | pytest | |
@@ -232,9 +349,20 @@ and rendering, `printed_page` for anything shown to a reviewer. Front matter
 before the numbering starts has no printed number and must be handled
 explicitly rather than by blindly subtracting 22.
 
-**More documents needed.** Requirements 7, 8 and 9 need multi-year figures, two
-prospectuses in the same sector, and two versions of the same prospectus.
-Collect these during Months 1-3, well before Month 8.
+**More documents needed — now a hard blocker, not a nice-to-have.** Both
+comparison modes are must-ship, so the demo needs a minimum of three documents
+and ideally four:
+
+| # | Document | Enables |
+|---|---|---|
+| 1 | Riyad Bank Sukuk Offering Prospectus | have it |
+| 2 | Another Riyad Bank prospectus from a different period | same-company-over-time comparison |
+| 3 | Another Saudi bank's sukuk prospectus | cross-company sector comparison |
+| 4 | Any further prospectus | makes the library feel real in the demo |
+
+Without #2 and #3 two must-ship requirements cannot be demonstrated at all.
+Collect these during Months 1-3. This is the single most likely way the project
+loses features.
 
 **Node.js is not installed.** Needed from Month 5. Install it in Month 4.
 
@@ -260,8 +388,9 @@ carrying document, page and section. Pushed to GitHub.
 *Learn:* **embeddings** (text as vectors where closeness means similar meaning)
 · cosine similarity · vector databases · chunking strategies · BM25 · hybrid
 search and rank fusion · reranking.
-*Build:* chunking with metadata · embedding pipeline · vector index · hybrid
-retriever · LLM reranker · a retrieval quality test set.
+*Build:* chunking with metadata · embedding pipeline (**English-only model** —
+Arabic is out of scope) · vector index · hybrid retriever · LLM reranker · a
+retrieval quality test set.
 *Deliverable:* ask a question in plain English, get genuinely relevant passages
 with page and section. Measurably better than the keyword version.
 
@@ -279,7 +408,7 @@ features.
 *Learn:* HTTP and REST · FastAPI · SQL · schema design · SQLAlchemy · Pydantic
 · async Python · background jobs · Docker basics.
 *Build:* PostgreSQL schema (documents, chunks, figures, risks, findings,
-users) · FastAPI service · upload endpoint · background ingestion worker with
+users, conversations, messages — saved chat history is must-ship) · FastAPI service · upload endpoint · background ingestion worker with
 job status · search and ask endpoints · auto-generated API docs. Install
 Node.js this month.
 *Deliverable:* a running API — upload a PDF over HTTP, watch it ingest, ask a
@@ -289,11 +418,13 @@ question, get a cited JSON answer.
 ### Month 5 — Frontend
 *Learn:* HTML/CSS/JS basics · React (components, props, state, effects) ·
 calling an API from the browser · routing · Tailwind · PDF.js.
-*Build:* React app — document library · upload with progress · document
-dashboard · ask screen with streaming answers · **citation chips that open the
-PDF at the cited page**.
-*Deliverable:* **first end-to-end demo.** Upload in the browser, ask a
-question, get a cited answer, click the citation, land on the page.
+*Build:* React chat app — message thread with streaming answers · upload with
+ingestion progress · **citation chips that open the PDF in a pane beside the
+conversation** · the proactive opening briefing · mode switcher scaffolding
+(Ask / Review / Compare).
+*Deliverable:* **first end-to-end demo.** Upload in the browser, watch the
+assistant open with its briefing, ask a follow-up question, click a citation,
+see the source page appear beside the answer.
 
 ### Month 6 — Structured extraction
 *Learn:* structured outputs and JSON schemas · vision/multimodal prompting ·
@@ -317,10 +448,12 @@ and watch the system plan and run a multi-step investigation, then cite it.
 ### Month 8 — Comparison, report, and access control
 *Learn:* diffing structured data · orchestrating parallel LLM calls · report
 templating · PDF/DOCX generation · authentication and roles.
-*Build:* revised-vs-earlier version comparison · sector peer comparison ·
-preliminary report generator (parallel specialist passes) with download · login
-and reviewer/admin roles.
-*Deliverable:* all ten functional requirements working through the web app.
+*Build:* **Compare mode** — the same company's prospectus across different time
+periods, answered in the same conversation rather than a separate screen ·
+cross-company sector comparison (equally must-ship) · preliminary report generator (parallel
+specialist passes) with download · login and reviewer/admin roles.
+*Deliverable:* all ten functional requirements reachable through the
+conversation.
 
 ### Month 9 — Evaluation, deployment, and defence
 *Learn:* evaluation sets · LLM-as-judge · retrieval metrics · measuring
@@ -335,13 +468,22 @@ demo video · defence presentation.
 
 ## Scope control
 
-**Must ship** (the project fails without these): ingestion, semantic retrieval,
-cited Q&A, financial extraction, risk extraction, missing-section and conflict
-checks, the web interface, the report, the evaluation.
+**Must ship** (the project fails without these): ingestion · semantic retrieval
+· cited Q&A in a chat interface · the proactive opening briefing · financial
+extraction · risk extraction · missing-section and conflict checks · **both
+comparison modes — same company across time periods AND cross-company sector
+comparison** · reviewer accounts with saved conversation history · the report ·
+the evaluation.
 
-**Cut first if behind schedule**, in this order: sector peer comparison ·
-Arabic support · auth roles beyond a single login · cloud deployment (demo
-locally) · the agent (fall back to fixed pipelines for the checks).
+**Cut first if behind schedule**, in this order: cloud deployment (demo
+locally) · admin role as distinct from reviewer · the report as a downloadable
+file (show it in the chat instead) · the agent (fall back to fixed pipelines
+for the checks).
+
+**Explicitly out of scope:** Arabic support. English only. If the project
+finishes early it may be added, but nothing is designed around it. Switching to
+a multilingual embedding model later costs one re-indexing run — minutes and
+cents for a handful of documents — so deferring this is cheap.
 
 **Never cut:** citations. They are the project's thesis.
 
