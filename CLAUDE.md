@@ -1,6 +1,7 @@
 # AI-Powered Prospectus Analysis and Review System
 
-**Senior project · 9 months · full stack · for the Capital Market Authority (CMA)**
+**Senior project · thirteen phases · full stack · for the Capital Market
+Authority (CMA)**
 
 ## The problem
 
@@ -32,6 +33,151 @@ unusual figures, and areas needing human review.
 
 Cutting across all ten: **the page and section supporting every important
 AI-generated answer.**
+
+## Priority: the core must be excellent before the edges are broad
+
+All ten requirements ship — the list is fixed. But they are **not equally
+important**, and effort is allocated accordingly.
+
+**Tier 1 — the project is judged on these.** Executive summaries (1),
+question answering (2), and citations (5). The bar is *correct answers that
+are not stupid, with sources*. Quality here beats every other feature.
+
+**Tier 2 — substantial features, normal quality bar.** Financial indicator
+extraction (3), risk factors (4), missing sections (7), conflicting figures
+(8), year-over-year changes (6), the preliminary report (10).
+
+**Tier 3 — the last thing built.** Comparison (9). Of the two modes,
+**cross-company sector comparison matters more** than same-company-across-time,
+so it is built first. Both come after everything else works.
+
+Two consequences that change the plan:
+
+- **Retrieval quality is the whole ballgame.** A wrong or vague answer is worse
+  than useless for a regulator, and it costs reviewer time rather than saving
+  it. Phases 3, 4 and 5 — retrieval and answering — carry the most weight of
+  any phases in the project.
+- **Evaluation starts in Phase 3, not at the end.** "Answers that are not
+  stupid" cannot be improved unless it is measured. The golden question set is
+  written in Phase 3 and re-run after every change to chunking, retrieval or
+  prompts. Phase 13 then becomes final measurement and write-up rather than
+  first measurement.
+
+### Answer behaviour — decided
+
+**Executive summary is layered.** A ~300-word overview first, with any part
+expandable into detail on request. The reviewer controls the depth. A four-page
+summary of a 195-page document has not saved anyone much time.
+
+**Partial answers are given, with the gap named.** When the prospectus only
+partly answers a question, the assistant states the supported part with its
+citation and then says explicitly what the document does not state. It does not
+refuse outright — over-refusing wastes reviewer time as surely as a wrong
+answer — and it never fills the gap with an invented figure. "Not found in the
+document" remains correct when nothing supports an answer at all.
+
+### The golden question set
+
+There are no CMA reviewers available: the users during development are the
+student and the examining professors. The question set is therefore
+**self-authored**, and should be written as *the questions an examiner would
+ask in the defence*, plus deliberately hard ones. Roughly 40 questions, each
+recorded with its expected answer, expected page(s) and section, in four
+categories:
+
+1. **Factual lookup** — stated plainly on one page.
+2. **Figure lookup** — a specific number, unit and year.
+3. **Synthesis** — requires combining two or more places in the document.
+4. **Absent information** — the document genuinely does not say. The correct
+   behaviour is refusal, and these catch invention, which is the single most
+   dangerous failure mode.
+
+Built in Phase 3 alongside retrieval, re-run after every change to chunking,
+retrieval or prompts. Its purpose is regression detection, not a final grade:
+it tells you whether a change made the system better or worse, which is
+otherwise impossible to know.
+
+### Document scope: sukuk AND equity IPO
+
+The system must handle **both sukuk (debt) prospectuses and equity IPO
+prospectuses**. The sample document is a sukuk, but the delivered product is
+not sukuk-only.
+
+Design consequence: nothing may hard-code one document type. Specifically, the
+system detects the offering type during ingestion and selects the matching
+**required-disclosures checklist** and **indicator set**:
+
+| | Sukuk / debt | Equity IPO |
+|---|---|---|
+| Checklist | issuance programme terms, Shari'ah approval, profit distribution, Sukukholder rights | offer price, share count, use of proceeds, ownership structure, lock-ups |
+| Indicators | for a bank issuer: net financing income, capital adequacy, non-performing loans | revenue, gross/net profit, assets, liabilities, cash flow |
+
+Both checklists come from the **official CMA disclosure requirements**, which
+the user can obtain. Requirement 7 must be built against those real lists, not
+a list inferred from a sample document's own contents page — an inferred
+checklist can only ever find sections the document already has, which makes the
+feature circular. Needed by Phase 10; earlier is better, since they also tell
+us what the Phase 8 summary should highlight.
+
+### Report format and materiality — decided
+
+**The preliminary report (requirement 10) is a well-formatted answer in the
+chat.** No PDF or Word export is required. This keeps everything inside the
+conversation, consistent with the product being an assistant rather than a
+document generator.
+
+**"Significant change" (requirement 6) is judged by the LLM**, case by case,
+rather than by a fixed percentage threshold. A 3% move in capital adequacy can
+matter more than a 30% move in a small balance-sheet line, and only judgement
+in context can tell them apart. Code still computes the differences exactly;
+the LLM decides which ones are worth a reviewer's attention.
+
+## The product: a chat assistant, not a dashboard
+
+**The objective is to reduce CMA reviewer time.** Every design decision is
+judged against that. A tool with six screens to learn does not save anyone
+time.
+
+So the final product has the shape of Claude or ChatGPT — a conversation with
+an assistant that knows the prospectus — not a web app with a navigation bar:
+
+- The reviewer **asks in plain English and gets a real answer in plain
+  English.** The citation is an annotation *on* the answer, not a substitute
+  for it. "Not found in the document" is still a valid answer; "here is page
+  88, go read it" is not.
+- **It speaks first.** As soon as a document finishes ingesting, the assistant
+  opens with a briefing: findings, missing information, unusual figures,
+  conflicts, and areas requiring human review. The reviewer should not have to
+  know what to ask in order to be warned.
+- **Modes, not screens.** Comparison is a mode within the same interface — the
+  way Claude places Chat, Cowork and Code beside one another — not a separate
+  window the reviewer navigates to. The conversation is continuous across
+  modes.
+- **The PDF sits beside the chat.** Clicking a citation opens the source page
+  in a pane next to the conversation, so verification never costs a context
+  switch.
+
+**Comparison has two equally required modes**, both answered inside the
+conversation rather than on a separate screen:
+
+1. **Same company, different time periods** — this year's submission against
+   last year's. What changed, what was removed, which figures moved.
+2. **Different companies, same sector** — this bank's sukuk prospectus against
+   another Saudi bank's.
+
+**Reviewers have individual accounts and their conversations are saved**, so a
+review can be picked up where it was left. The uploaded prospectuses form a
+**library**: any conversation can pull in one document or several, which is
+also what makes comparison work without a special second window.
+
+### "Learning" the prospectus means indexing, not training
+
+The assistant is **not fine-tuned** on prospectus data. Fine-tuning dissolves
+text into model weights, and weights have no page numbers — which makes it
+fundamentally incompatible with Rule 1. Instead the document is read, indexed
+and retrieved from, so every sentence the assistant produces stays traceable to
+a page a reviewer can open. The reviewer's experience is an assistant that
+knows the document; the mechanism is retrieval.
 
 ---
 
@@ -88,9 +234,10 @@ gets deferred to a vague "later" where it risks never being built.
 ### The full-stack picture
 
 ```
-  BROWSER
+  BROWSER — a chat, not a dashboard
   React + Tailwind
-  library · upload · dashboard · ask · financials · risks · compare · report
+  one conversation · modes: Ask / Review / Compare · PDF pane beside the chat
+  proactive opening briefing when a document finishes ingesting
         |  HTTP / JSON  (streaming for answers)
         v
   BACKEND                                     FastAPI (Python)
@@ -193,7 +340,7 @@ rewriting everything.
 | Frontend | React + Vite + Tailwind | **needs Node.js — not yet installed** |
 | PDF viewer | PDF.js in the browser | so citations can jump to the page |
 | LLM | Claude API, `claude-opus-5`, `anthropic` Python SDK | |
-| Embeddings | dedicated embedding model — chosen in Month 2 | local open model vs. hosted |
+| Embeddings | dedicated embedding model — chosen in Phase 2 | English-only; local open model vs. hosted |
 | Auth | JWT sessions, reviewer/admin roles | |
 | Packaging | Docker + docker-compose | for the final deployment |
 | Testing | pytest | |
@@ -214,13 +361,13 @@ tables and tables extract badly as text. Both are direct matches for Rule 1.
 **Document type — CONFIRMED.** The page header reads *"Riyad Bank Sukuk
 Offering Prospectus"*. This is a **sukuk (Islamic bond) offering prospectus for
 a Saudi bank**, not an equity IPO. Consequences: the required-disclosures
-checklist in Month 7 must be the sukuk/debt one, not the equity one (no offer
+checklist in Phase 7 must be the sukuk/debt one, not the equity one (no offer
 price, no share count; instead issuance programme terms, Shari'ah approval,
-profit distribution mechanics); and the Month 6 indicators are bank indicators
+profit distribution mechanics); and the Phase 6 indicators are bank indicators
 (net financing income, capital adequacy, non-performing loans) rather than
-generic corporate ones. Still to confirm with the user: whether the delivered
-system should target sukuk documents specifically, or be general enough for
-equity IPOs too.
+generic corporate ones. **Resolved:** the delivered system must handle **both** sukuk
+and equity IPO prospectuses, so the offering type is detected at ingestion and
+drives which checklist and indicator set is used.
 
 **Page numbering offset — critical for Rule 1.** The number printed on the page
 runs **22 behind** the PDF page index: PDF page 136 is printed page 114. The
@@ -232,128 +379,178 @@ and rendering, `printed_page` for anything shown to a reviewer. Front matter
 before the numbering starts has no printed number and must be handled
 explicitly rather than by blindly subtracting 22.
 
-**More documents needed.** Requirements 7, 8 and 9 need multi-year figures, two
-prospectuses in the same sector, and two versions of the same prospectus.
-Collect these during Months 1-3, well before Month 8.
+**More documents needed — now a hard blocker, not a nice-to-have.** Both
+comparison modes are must-ship, so the demo needs a minimum of three documents
+and ideally four:
 
-**Node.js is not installed.** Needed from Month 5. Install it in Month 4.
+| # | Document | Enables |
+|---|---|---|
+| 1 | Riyad Bank Sukuk Offering Prospectus | have it |
+| 2 | Another Riyad Bank prospectus from a different period | same-company-over-time comparison |
+| 3 | Another Saudi bank's sukuk prospectus | cross-company sector comparison |
+| 4 | **An equity IPO prospectus** | now required — the system must handle equity, and it cannot be tested on a document type we do not have |
+
+Without #2 and #3 two must-ship requirements cannot be demonstrated at all.
+Collect these during Phases 1-3. This is the single most likely way the project
+loses features.
+
+**Node.js is not installed.** Needed from Phase 5. Install it in Phase 4.
 
 ---
 
-## Nine-month plan
+## Build plan
 
-Assumed timeline September - May; shift the calendar labels to match the real
-academic schedule. Each month ends in something **runnable and demonstrable**.
+Thirteen phases in six stages. **The calendar does not matter; the sequence
+does.** A phase ends when it is runnable, demonstrable and understood — not
+when a month is up.
 
-### Month 1 — Foundations and ingestion
-*Learn:* Python essentials (functions, dicts, comprehensions, files, error
-handling) · virtual environments · git and GitHub · environment variables ·
-JSON · how PDFs store text (no paragraphs, only positioned characters) · the
-command line.
-*Build:* repo and project structure · venv · `.env` · PDF text extraction per
-page · page image rendering · first-pass section/heading detection · CLI.
-*Deliverable:* the whole prospectus as structured JSON, every piece of text
-carrying document, page and section. Pushed to GitHub.
-*Academic:* project proposal / SRS document.
+### Priority is not the same as sequence
 
-### Month 2 — Semantic retrieval
-*Learn:* **embeddings** (text as vectors where closeness means similar meaning)
-· cosine similarity · vector databases · chunking strategies · BM25 · hybrid
-search and rank fusion · reranking.
-*Build:* chunking with metadata · embedding pipeline · vector index · hybrid
-retriever · LLM reranker · a retrieval quality test set.
-*Deliverable:* ask a question in plain English, get genuinely relevant passages
-with page and section. Measurably better than the keyword version.
+The chat interface is one of the highest-priority parts of this project, and it
+is still not built first. Priority decides *where quality effort goes*;
+dependency decides *what order things are built in*. A chat window with nothing
+behind it is a demo of a text box. The order below reaches a working product as
+early as dependencies allow, then deepens it.
 
-### Month 3 — Grounded answers and summaries
-*Learn:* the Claude API · system prompts · prompt engineering · grounding vs.
-hallucination · the citations feature · streaming · token counting · prompt
-caching · map-reduce summarising.
-*Build:* answer engine with citations · refusal behaviour when unsupported ·
-section summaries · executive summary · response caching · cost tracking.
-*Deliverable:* **the core demo** — a working cited RAG system on the command
-line. This is the heart of the project; everything after is platform and
-features.
+---
 
-### Month 4 — Backend and database
-*Learn:* HTTP and REST · FastAPI · SQL · schema design · SQLAlchemy · Pydantic
-· async Python · background jobs · Docker basics.
-*Build:* PostgreSQL schema (documents, chunks, figures, risks, findings,
-users) · FastAPI service · upload endpoint · background ingestion worker with
-job status · search and ask endpoints · auto-generated API docs. Install
-Node.js this month.
-*Deliverable:* a running API — upload a PDF over HTTP, watch it ingest, ask a
-question, get a cited JSON answer.
-*Academic:* midterm progress report and demo.
+### Stage A — The document becomes machine-readable
 
-### Month 5 — Frontend
-*Learn:* HTML/CSS/JS basics · React (components, props, state, effects) ·
-calling an API from the browser · routing · Tailwind · PDF.js.
-*Build:* React app — document library · upload with progress · document
-dashboard · ask screen with streaming answers · **citation chips that open the
-PDF at the cited page**.
-*Deliverable:* **first end-to-end demo.** Upload in the browser, ask a
-question, get a cited answer, click the citation, land on the page.
+**Phase 1 — Foundations and ingestion.** DONE. Repo, venv, `.env`,
+`.gitignore`, `src/config.py`, `src/ingest.py` (text per page + page image
+rendering), extraction health check.
 
-### Month 6 — Structured extraction
+**Phase 2 — Structure.** Detect headings, build the document outline, tag every
+chunk with its section, and carry **both** `pdf_page` and `printed_page` (the
+sample document runs 22 apart). Detect the offering type (sukuk vs equity)
+while we are here. This completes the citation.
+*Learn:* regular expressions · chunking strategies and why chunk size changes
+answer quality · what document structure means to a retrieval system.
+
+### Stage B — Retrieval that is not stupid  *(Tier 1 foundation)*
+
+**Phase 3 — Embeddings and the golden question set.** Convert chunks to vectors
+and search by meaning. Write the ~40-question test set at the same time, and
+take the **first measurement** — this is the baseline every later change is
+compared against.
+*Learn:* **embeddings** — text as vectors where closeness means similar meaning
+· cosine similarity · vector indexes · how to score retrieval quality.
+
+**Phase 4 — Hybrid search and reranking.** Fuse semantic and keyword results,
+let the LLM rewrite and split hard questions, retrieve wide then rerank down.
+Re-run the test set and show the improvement as a number.
+*Learn:* hybrid search and rank fusion · **reranking** · query decomposition.
+
+### Stage C — It answers  *(Tier 1)*
+
+**Phase 5 — Grounded, cited answers.** Claude answers only from retrieved
+chunks, cites page and section, gives partial answers with the gap named, and
+refuses rather than inventing. Command line only.
+*Learn:* the Claude API and Python SDK · system prompts · **grounding vs.
+hallucination** · streaming · prompt caching · cost tracking.
+
+### Stage D — It becomes a product
+
+**Phase 6 — Backend and database.** PostgreSQL (documents, chunks, figures,
+risks, findings, users, conversations, messages), FastAPI, background ingestion
+worker with job status. Install Node.js this phase.
+*Learn:* HTTP and REST · FastAPI · SQL and schema design · SQLAlchemy ·
+Pydantic · background jobs.
+
+**Phase 7 — The chat web app.** The message thread with streaming answers,
+upload with progress, **citation chips that open the PDF beside the
+conversation**, conversation history.
+*Learn:* HTML/CSS/JS · React (components, props, state, effects) · calling an
+API from the browser · Tailwind · PDF.js.
+**End-to-end demo: upload, ask, get a cited answer, click through to the page.**
+Everything after this phase is visible in the product immediately.
+
+### Stage E — It gets intelligent
+
+**Phase 8 — Summaries.** Layered executive summary: ~300 words, expandable per
+section, every claim cited.
+*Learn:* **map-reduce summarising** — summarise the parts, then the summaries.
+
+**Phase 9 — Structured extraction.** Financial indicators and risk factors into
+database tables with page and section. Vision on statement pages, because
+tables extract badly as text. Indicator set chosen by offering type.
 *Learn:* structured outputs and JSON schemas · vision/multimodal prompting ·
-PDF table extraction · data validation · normalising financial numbers.
-*Build:* financial indicator extraction (vision on statement pages) into the
-database · risk factor extraction and categorisation · financials screen with a
-multi-year table · risks screen grouped by category.
-*Deliverable:* open a prospectus and see its financials and risks as structured
-data, every cell citing its page.
+normalising financial numbers.
 
-### Month 7 — The agent and the verification engine
-*Learn:* tool use / function calling · the agent loop · when an agent beats a
-fixed pipeline · pytest · deterministic checks.
-*Build:* tool-using agent with `search_document`, `get_page`, `lookup_figure`,
-`list_sections` · missing-section checker · conflicting-figure detector ·
-year-over-year change analysis · findings persisted and flagged on the
-dashboard.
-*Deliverable:* the standout feature — ask "are the revenue figures consistent?"
-and watch the system plan and run a multi-step investigation, then cite it.
+**Phase 10 — The checks and the agent.** Missing sections against the real CMA
+checklist; conflicting figures; year-over-year movements with the LLM judging
+materiality. Claude gets tools and plans multi-step investigations.
+*Learn:* **tool use / function calling** · the agent loop · pytest ·
+deterministic checks.
 
-### Month 8 — Comparison, report, and access control
-*Learn:* diffing structured data · orchestrating parallel LLM calls · report
-templating · PDF/DOCX generation · authentication and roles.
-*Build:* revised-vs-earlier version comparison · sector peer comparison ·
-preliminary report generator (parallel specialist passes) with download · login
-and reviewer/admin roles.
-*Deliverable:* all ten functional requirements working through the web app.
+**Phase 11 — The proactive briefing and the report.** The assistant speaks
+first when ingestion finishes, and the preliminary report as a formatted chat
+answer assembled from parallel specialist passes.
+*Learn:* orchestrating several LLM calls · separating findings from
+presentation.
 
-### Month 9 — Evaluation, deployment, and defence
-*Learn:* evaluation sets · LLM-as-judge · retrieval metrics · measuring
-citation accuracy and hallucination rate · Docker Compose · deployment ·
-technical writing.
-*Build:* evaluation harness and results tables · bug fixing and UI polish ·
-Arabic and scanned-page handling · docker-compose deployment · final report ·
-demo video · defence presentation.
-*Deliverable:* a deployed, measured, documented system and a defence.
+### Stage F — The last things
+
+**Phase 12 — Comparison.** **Cross-company sector comparison first** (the more
+valuable of the two), then same-company across time periods. Answered inside
+the conversation, not on a separate screen.
+*Learn:* diffing structured data · retrieval scoped to several documents.
+
+**Phase 13 — Evaluation, hosting and defence.** Final measurement with
+LLM-as-judge, bug fixing and polish, deploy online, final report, demo video,
+defence.
+*Learn:* LLM-as-judge · retrieval and citation metrics · Docker Compose ·
+deployment · technical writing.
 
 ---
 
 ## Scope control
 
-**Must ship** (the project fails without these): ingestion, semantic retrieval,
-cited Q&A, financial extraction, risk extraction, missing-section and conflict
-checks, the web interface, the report, the evaluation.
+**Must ship** (the project fails without these): ingestion · semantic retrieval
+· cited Q&A in a chat interface · the proactive opening briefing · financial
+extraction · risk extraction · missing-section and conflict checks ·
+comparison of the same company across time periods · reviewer accounts with
+saved conversation history · the preliminary report as a formatted chat answer
+· online deployment · the evaluation.
 
-**Cut first if behind schedule**, in this order: sector peer comparison ·
-Arabic support · auth roles beyond a single login · cloud deployment (demo
-locally) · the agent (fall back to fixed pipelines for the checks).
+**Cut first if behind schedule**, in this order: admin role as distinct from
+reviewer · **cross-company sector comparison** · the agent (fall back to fixed
+pipelines for the checks).
+
+Note the change of position on sector comparison. It was originally called
+equally required, but the user then stated that comparison matters far less
+than summarisation and answer quality. Both modes are still built; if something
+has to give, the sector mode goes before anything in Tier 1 or 2 is weakened.
+
+**Not cuttable, despite being late in the plan:** **online deployment**. The
+project is full stack and must run online, not only on the student's laptop.
+Plan the deployment target early rather than discovering hosting problems in
+the final phase.
+
+**Explicitly out of scope:** Arabic support. English only. If the project
+finishes early it may be added, but nothing is designed around it. Switching to
+a multilingual embedding model later costs one re-indexing run — minutes and
+cents for a handful of documents — so deferring this is cheap.
 
 **Never cut:** citations. They are the project's thesis.
 
-**Buffer:** treat Month 9 as evaluation and writing only. Do not plan features
-into it. Every senior project overruns.
+**Buffer:** Phase 9 is evaluation and writing only. Do not plan features into
+it. Every senior project overruns, and this phase is what absorbs it.
 
 ---
 
 ## Working agreements
 
+**Working conditions.** The user commits **20+ hours a week** — this is their
+main focus, not a side project. That budget is what makes the ambitious version
+realistic rather than aspirational, so do the hard parts properly instead of
+reaching for shortcuts. There are **regular supervisor meetings** rather than
+one midterm demo, so every phase must end in something that can be shown and
+explained, and sub-steps within long phases should be demoable too. **No
+throwaway UI** — the real React app is built once, in Phase 7.
+
 - **One step at a time.** Finish it, run it, understand it, then move on.
-- **Every month ends with a runnable demo.**
+- **Every phase ends with a runnable demo.**
 - **Explain the failure, not just the fix.** Reading an error message is the
   most transferable skill here.
 - **Test against the real document.** `prospectus.pdf` decides whether
@@ -368,9 +565,15 @@ into it. Every senior project overruns.
 
 ## Current status
 
-**Month 1, in progress.** An early ingestion script and a throwaway keyword
-search exist in `search_prospectus.py`, written before setup. The keyword
-search is scaffolding — it gets absorbed into the hybrid retriever in Month 2.
-Project setup (venv, git, structure) still to do.
+**Phase 1 complete.** Repo, venv, `.env`/`.gitignore` (key verified excluded),
+`src/config.py` and `src/ingest.py` (text per page + page image rendering).
+Verified on the sample document: 195 pages, 698,273 characters, full text layer
+so no OCR is needed. Committed and pushed to GitHub.
+
+`search_prospectus.py` is the throwaway keyword prototype written before setup;
+it is scaffolding and gets absorbed into the hybrid retriever in Phase 4.
+
+**Next: Phase 2 — structure.** Section detection, and carrying both `pdf_page`
+and `printed_page` so citations point where a reviewer actually looks.
 
 Files: `prospectus.pdf`, `search_prospectus.py`, `CLAUDE.md`.
