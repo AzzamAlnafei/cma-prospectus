@@ -40,6 +40,10 @@ python -m src.ingest --market sukuk
 # Also render pages as images (for vision work later)
 python -m src.ingest --images 1-10
 python -m src.ingest --images all --dpi 200
+
+# Search the ingested library (keyword only, for now)
+python -m src.search "risks related to liquidity"
+python -m src.search "capital adequacy" --market sukuk --top 3
 ```
 
 Output goes to `data/` (git-ignored — regenerate by re-running the script).
@@ -59,7 +63,7 @@ Output goes to `data/` (git-ignored — regenerate by re-running the script).
 | `data/pages/` | Extracted text + outline, as JSON |
 | `data/chunks/` | Citable chunks, as JSON |
 | `data/images/` | Rendered page images (PNG) |
-| `search_prospectus.py` | Early keyword prototype — replaced in Phase 4 |
+| `src/search.py` | Keyword search over the library — the Phase 3 baseline |
 
 ## The library
 
