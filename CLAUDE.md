@@ -97,23 +97,36 @@ retrieval or prompts. Its purpose is regression detection, not a final grade:
 it tells you whether a change made the system better or worse, which is
 otherwise impossible to know.
 
-### Document scope: sukuk AND equity IPO
+### Document scope: three markets, three rulebooks
 
-The system must handle **both sukuk (debt) prospectuses and equity IPO
-prospectuses**. The sample document is a sukuk, but the delivered product is
-not sukuk-only.
+The CMA runs three offering regimes and **each has its own required
+disclosures**. A prospectus is filed under exactly one of them, and the market
+decides which checklist and which indicators apply:
 
-Design consequence: nothing may hard-code one document type. Specifically, the
-system detects the offering type during ingestion and selects the matching
-**required-disclosures checklist** and **indicator set**:
-
-| | Sukuk / debt | Equity IPO |
+| Market | What it is | Disclosure burden |
 |---|---|---|
-| Checklist | issuance programme terms, Shari'ah approval, profit distribution, Sukukholder rights | offer price, share count, use of proceeds, ownership structure, lock-ups |
-| Indicators | for a bank issuer: net financing income, capital adequacy, non-performing loans | revenue, gross/net profit, assets, liabilities, cash flow |
+| **sukuk** | Islamic bonds — debt, not shares | programme terms, Shari'ah approval, profit distribution, Sukukholder rights |
+| **tasi** | the Main Market, largest companies | heaviest — full financial, governance and ownership disclosure |
+| **nomu** | the Parallel Market, smaller companies | lighter than TASI, and qualified-investor restrictions |
 
-Both checklists come from the **official CMA disclosure requirements**, which
-the user can obtain. Requirement 7 must be built against those real lists, not
+Nothing may hard-code one market. The market is taken from the folder a PDF
+sits in (`sukuk/`, `tasi/`, `nomu/`) rather than guessed from the text: whoever
+files the document already knows which market it belongs to, so inferring it
+would add a chance of being wrong for no benefit.
+
+**The library**
+
+| Market | Document | Pages |
+|---|---|---|
+| sukuk | Riyad Bank Sukuk Offering Prospectus | 195 |
+| tasi | Naseej International Trading Company — Rights Issue | 258 |
+| nomu | Jamjoom Fashion Trading Company | 408 |
+
+Three markets, three companies, three documents — enough to build and
+demonstrate everything except same-company-across-time comparison.
+
+**All three checklists** come from the official CMA disclosure requirements,
+which are published on the CMA website and which the user can read. Requirement 7 must be built against those real lists, not
 a list inferred from a sample document's own contents page — an inferred
 checklist can only ever find sections the document already has, which makes the
 feature circular. Needed by Phase 10; earlier is better, since they also tell
@@ -369,15 +382,18 @@ generic corporate ones. **Resolved:** the delivered system must handle **both** 
 and equity IPO prospectuses, so the offering type is detected at ingestion and
 drives which checklist and indicator set is used.
 
-**Page numbering offset — critical for Rule 1.** The number printed on the page
-runs **22 behind** the PDF page index: PDF page 136 is printed page 114. The
-offset is consistent across the body of the document (verified at PDF pages 50,
-100, 136, 151, 181) and comes from unnumbered front matter. A citation showing
-the PDF index would send a reviewer to the wrong page of their copy. Every
-chunk must therefore carry **both** numbers — `pdf_page` for internal lookups
-and rendering, `printed_page` for anything shown to a reviewer. Front matter
-before the numbering starts has no printed number and must be handled
-explicitly rather than by blindly subtracting 22.
+**Page numbering offset — critical for Rule 1. SOLVED in Phase 2.** The number
+printed on a page does not match the PDF's own page count, because of
+unnumbered front matter — and the gap differs per document: **sukuk 22, tasi
+41, nomu 43**. A citation showing the PDF index would send a reviewer dozens of
+pages from the answer, with nothing erroring and nothing looking wrong.
+
+`src/pagemap.py` works the offset out per document from evidence rather than
+hard-coding it, and refuses to guess when the evidence is weak. Verified
+independently: 99% (sukuk), 93% (tasi), 97% (nomu) of numbered pages show the
+number the offset predicts. Every chunk carries **both** `pdf_page` and
+`printed_page`; front matter has no printed number, so `printed_page` is null
+and the citation says "PDF page 4" rather than inventing one.
 
 **More documents needed — now a hard blocker, not a nice-to-have.** Both
 comparison modes are must-ship, so the demo needs a minimum of three documents
@@ -565,15 +581,40 @@ throwaway UI** — the real React app is built once, in Phase 7.
 
 ## Current status
 
-**Phase 1 complete.** Repo, venv, `.env`/`.gitignore` (key verified excluded),
-`src/config.py` and `src/ingest.py` (text per page + page image rendering).
-Verified on the sample document: 195 pages, 698,273 characters, full text layer
-so no OCR is needed. Committed and pushed to GitHub.
+**Phases 1 and 2 complete**, committed and pushed to GitHub.
 
-`search_prospectus.py` is the throwaway keyword prototype written before setup;
-it is scaffolding and gets absorbed into the hybrid retriever in Phase 4.
+The library holds three prospectuses across three markets, ingested into
+**3,413 citable chunks**, every chunk carrying document, market, section path,
+`pdf_page` and `printed_page`:
 
-**Next: Phase 2 — structure.** Section detection, and carrying both `pdf_page`
-and `printed_page` so citations point where a reviewer actually looks.
+| Market | Document | Pages | Chunks | Page offset (agreement / independently verified) |
+|---|---|---|---|---|
+| sukuk | Riyad Bank Sukuk Offering | 195 | 889 | 22 (88% / **99%**) |
+| tasi | Naseej International Rights Issue | 258 | 1,219 | 41 (78% / **93%**) |
+| nomu | Jamjoom Fashion Trading | 408 | 1,305 | 43 (87% / **97%**) |
 
-Files: `prospectus.pdf`, `search_prospectus.py`, `CLAUDE.md`.
+All three documents turned out to have a usable **PDF outline** once authoring
+junk was filtered out (`_Hlk...` Word bookmarks, and 165 exhibit/table captions
+in the nomu file). The font-analysis fallback in `sections.py` is written and
+tested but was not needed for these three — it exists because the next document
+may not be so lucky.
+
+**Modules:** `config.py` (paths, markets) · `documents.py` (library discovery,
+market from folder) · `ingest.py` (orchestration, text, page images) ·
+`pagemap.py` (printed-page detection) · `sections.py` (outline) ·
+`boilerplate.py` (running-header removal) · `chunks.py` (chunking with
+citations).
+
+**Known gaps carried forward:**
+
+- **13 pages have no text layer** (2 in tasi, 11 in nomu) and will need OCR.
+  The sukuk document has none.
+- Front-matter chunks have no printed page number; they correctly report
+  "PDF page N" rather than inventing one.
+- Boilerplate removal stripped 1.1% / 3.5% / 5.8% of raw text as running
+  headers and footers. Worth re-checking in Phase 3 that nothing real was lost.
+- `search_prospectus.py` is the throwaway keyword prototype written before
+  setup. It is scaffolding and gets absorbed into the hybrid retriever in
+  Phase 4.
+
+**Next: Phase 3 — embeddings and the golden question set.**

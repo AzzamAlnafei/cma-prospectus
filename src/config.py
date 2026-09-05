@@ -2,7 +2,7 @@
 config.py -- one place for every path and setting in the project.
 
 WHY THIS FILE EXISTS
-    Without it, "where is the PDF?" gets answered separately in every script,
+    Without it, "where are the PDFs?" gets answered separately in every script,
     and the day you move a folder you have to hunt down all of them. Every
     other file imports its paths from here instead of inventing its own.
 """
@@ -18,18 +18,34 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------------------------
 
 # __file__ is this file (src/config.py).
-#   .resolve()  turns it into a full path
+#   .resolve()  -> full path
 #   .parent     -> src/
 #   .parent     -> the project root
-# Building paths this way means the project works no matter which folder you
-# happen to be standing in when you run it.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-PDF_PATH = PROJECT_ROOT / "prospectus.pdf"
 
 DATA_DIR = PROJECT_ROOT / "data"
 PAGES_DIR = DATA_DIR / "pages"      # extracted text, as JSON
+CHUNKS_DIR = DATA_DIR / "chunks"    # chunked text with citations, as JSON
 IMAGES_DIR = DATA_DIR / "images"    # rendered page pictures, as PNG
+
+
+# ---------------------------------------------------------------------------
+# Markets
+# ---------------------------------------------------------------------------
+#
+# The CMA runs three different offering regimes, and each has its OWN list of
+# required disclosures. A prospectus is filed under exactly one of them, so the
+# market decides which checklist and which financial indicators apply.
+#
+#   sukuk  Islamic bonds -- debt, not shares
+#   tasi   the Main Market. Largest companies, heaviest disclosure requirements
+#   nomu   the Parallel Market. Smaller companies, lighter requirements
+#
+# We take the market from the FOLDER a PDF sits in. That is deliberately
+# simple: a human filing the document already knows which market it belongs
+# to, so guessing it from the text would add a chance of being wrong for no
+# benefit.
+MARKETS = ("sukuk", "tasi", "nomu")
 
 
 # ---------------------------------------------------------------------------
@@ -38,22 +54,15 @@ IMAGES_DIR = DATA_DIR / "images"    # rendered page pictures, as PNG
 
 # load_dotenv() reads the .env file and copies its contents into the
 # "environment" -- a set of named values the operating system hands to your
-# program. The key is then available to Python, but exists nowhere in the code
-# and so can never be committed to git by accident.
+# program. The key is then available to Python but exists nowhere in the code,
+# so it can never be committed to git by accident.
 load_dotenv(PROJECT_ROOT / ".env")
 
-# os.getenv returns None if the name is not set, instead of crashing.
-# We do not require the key yet -- ingestion never calls the API.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
 
 
 def ensure_directories():
-    """
-    Create the data folders if they do not already exist.
-
-    parents=True   also create any missing parent folder
-    exist_ok=True  do nothing (instead of crashing) if it is already there
-    """
-    PAGES_DIR.mkdir(parents=True, exist_ok=True)
-    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    """Create the data folders if they do not already exist."""
+    for directory in (PAGES_DIR, CHUNKS_DIR, IMAGES_DIR):
+        directory.mkdir(parents=True, exist_ok=True)

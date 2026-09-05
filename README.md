@@ -28,36 +28,57 @@ cp .env.example .env
 ## Usage
 
 ```bash
-# Extract all text, page by page
+# List the prospectuses found
+python -m src.ingest --list
+
+# Ingest everything: text, sections, page numbers, chunks
 python -m src.ingest
 
-# Also render specific pages as images
+# One market only
+python -m src.ingest --market sukuk
+
+# Also render pages as images (for vision work later)
 python -m src.ingest --images 1-10
-python -m src.ingest --images 12,88,91
 python -m src.ingest --images all --dpi 200
 ```
 
-Output goes to `data/` (git-ignored — regenerate it by re-running the script).
+Output goes to `data/` (git-ignored — regenerate by re-running the script).
 
 ## Project layout
 
 | Path | Contents |
 |---|---|
+| `sukuk/`, `tasi/`, `nomu/` | Prospectus PDFs — the folder sets the market |
 | `src/config.py` | All paths and settings in one place |
-| `src/ingest.py` | PDF → text per page + rendered page images |
-| `data/pages/` | Extracted text as JSON |
+| `src/documents.py` | Finds the PDFs, gives each a stable id |
+| `src/ingest.py` | Orchestrates ingestion; text and page images |
+| `src/pagemap.py` | Works out the page number *printed* on each page |
+| `src/sections.py` | Document outline, from bookmarks or font analysis |
+| `src/boilerplate.py` | Strips running headers and footers |
+| `src/chunks.py` | Cuts pages into passages carrying full citations |
+| `data/pages/` | Extracted text + outline, as JSON |
+| `data/chunks/` | Citable chunks, as JSON |
 | `data/images/` | Rendered page images (PNG) |
-| `tests/` | Automated tests |
-| `search_prospectus.py` | Early keyword-search prototype — replaced in Month 2 |
+| `search_prospectus.py` | Early keyword prototype — replaced in Phase 4 |
 
-## Sample document
+## The library
 
-`prospectus.pdf` — Riyad Bank Sukuk Offering Prospectus, 195 pages, full text
-layer (no OCR needed).
+The CMA runs three offering regimes, each with its own required disclosures.
+A PDF's market is set by the folder it sits in.
 
-**Note:** printed page numbers run 22 behind PDF page numbers (PDF page 136 is
-printed page 114). Citations must report the printed number a reviewer sees.
+| Market | Document | Pages | Chunks |
+|---|---|---|---|
+| `sukuk/` | Riyad Bank Sukuk Offering Prospectus | 195 | 889 |
+| `tasi/` | Naseej International Trading — Rights Issue | 258 | 1,219 |
+| `nomu/` | Jamjoom Fashion Trading Company | 408 | 1,305 |
+
+**Page numbers.** The number printed on a page does not match the PDF page
+count — the gap is 22, 41 and 43 respectively, caused by unnumbered front
+matter. `pagemap.py` detects it per document rather than hard-coding it, and
+every chunk carries both numbers so citations point where a reviewer actually
+looks.
 
 ## Status
 
-Month 1 — ingestion working.
+Phases 1-2 complete: ingestion, structure and citable chunks.
+Next: Phase 3 — embeddings and retrieval.

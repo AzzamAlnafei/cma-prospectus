@@ -1,30 +1,27 @@
 """
-ingest.py -- Month 1 deliverable: turn a PDF into structured data.
+ingest.py -- turn every prospectus in the library into structured, citable data.
 
-WHAT THIS DOES
-    1. Reads every page of a PDF and extracts its text.
-    2. Attaches document_id and page number to every piece of that text.
-    3. Optionally renders pages as PNG images (needed for vision in Month 6,
-       because financial statements are tables and tables extract badly as
-       text -- but Claude can simply LOOK at the page).
-    4. Saves the result as JSON you can open and inspect.
+WHAT THIS DOES, PER DOCUMENT
+    1. Extract the text of every page.
+    2. Work out which number is PRINTED on each page (they disagree with the
+       PDF's own page numbers).
+    3. Build the section outline, from the PDF's bookmarks or from the way
+       headings are typeset.
+    4. Cut the pages into overlapping passages, each carrying document, market,
+       both page numbers, and its section.
+    5. Optionally render pages as PNG images, for the vision work later.
+    6. Save it all as JSON you can open and inspect.
 
-WHY document_id IS HERE ALREADY
-    The system will eventually hold a LIBRARY of prospectuses, because two of
-    the requirements are "compare two companies" and "compare two versions".
-    Adding an id now is free. Adding it later means rewriting everything that
-    ever touched a chunk of text.
-
-WHY WE DO NOT EXTRACT SECTIONS YET
-    That is the next step. This file produces page-level text; section
-    detection reads that output and adds the heading each chunk sits under.
-    One job per file.
+WHY EVERYTHING CARRIES SO MUCH METADATA
+    Our standing rule is that every answer cites its page and section. Metadata
+    attached at extraction time survives all the way to the reviewer's screen.
+    Metadata bolted on later never quite does.
 
 HOW TO RUN IT
-    python -m src.ingest                      # text only
-    python -m src.ingest --images 1-10        # also render pages 1 to 10
-    python -m src.ingest --images 12,88,91    # render three specific pages
-    python -m src.ingest --images all         # render all 195 (slow, ~100 MB)
+    python -m src.ingest                       # every document, text only
+    python -m src.ingest --market sukuk        # one market only
+    python -m src.ingest --images 1-10         # also render pages 1 to 10
+    python -m src.ingest --list                # just show what was found
 """
 
 import argparse
@@ -32,195 +29,211 @@ import json
 import sys
 from datetime import datetime, timezone
 
-import pymupdf  # the PDF library: reads text AND renders pages as images
+import pymupdf
 
-from src import config
+from src import boilerplate
+from src import chunks as chunking
+from src import config, documents, pagemap, sections
 
 
 # ---------------------------------------------------------------------------
 # Step 1: extract the text
 # ---------------------------------------------------------------------------
 
-def extract_pages(pdf_path, document_id):
+def extract_pages(doc):
     """
-    Read every page of the PDF and return a list of dictionaries:
+    Read every page and return:
+        [{"page": 1, "text": "...", "char_count": 4842}, ...]
 
-        [{"document_id": "prospectus", "page": 1, "text": "...",
-          "char_count": 4842}, ...]
-
-    The page number is the single most important field in this project. Our
-    standing rule is that every answer must cite its page, so we attach the
-    number here -- the moment the text comes out of the PDF -- and never let
-    go of it.
+    Page numbers here count from 1, matching what a human sees in a PDF reader.
+    Converting once, here, means every page number downstream is already the
+    one a reviewer would recognise.
     """
     pages = []
 
-    # pymupdf.open() gives us the document. Using "with" guarantees the file is
-    # closed properly even if something goes wrong halfway through.
-    with pymupdf.open(pdf_path) as doc:
-        for index, page in enumerate(doc):
-            # enumerate() counts from 0, but humans and PDF readers count
-            # pages from 1. Converting here, once, means every page number
-            # downstream is already the one a reviewer would recognise.
-            page_number = index + 1
-
-            # "text" mode returns plain reading-order text. PyMuPDF also
-            # offers "blocks", "dict" and "html" modes that preserve position
-            # information -- we will want those in Month 2 for smarter
-            # chunking, but plain text is the right start.
-            text = page.get_text("text")
-
-            pages.append({
-                "document_id": document_id,
-                "page": page_number,
-                "text": text,
-                "char_count": len(text),
-            })
+    for index, page in enumerate(doc):
+        # get_text returns "" rather than None for a page with no text layer,
+        # but we guard anyway -- a full-page image returns nothing useful.
+        text = page.get_text("text") or ""
+        pages.append({
+            "page": index + 1,
+            "text": text,
+            "char_count": len(text),
+        })
 
     return pages
 
 
 # ---------------------------------------------------------------------------
-# Step 2: render pages as images
+# Step 2: render page images (optional)
 # ---------------------------------------------------------------------------
 
 def parse_page_range(spec, page_count):
     """
-    Turn a command-line page selection into an actual list of page numbers.
+    Turn a page selection into a list of page numbers.
 
-        "all"       -> [1, 2, 3, ... 195]
+        "all"       -> [1, 2, ... page_count]
         "1-10"      -> [1, 2, ... 10]
         "12,88,91"  -> [12, 88, 91]
-        "1-3,88"    -> [1, 2, 3, 88]
 
-    Anything outside the document is dropped rather than crashing, because a
-    typo in a page number should not lose you a five-minute extraction run.
+    Pages outside the document are dropped rather than crashing: a typo should
+    not lose you a long extraction run.
     """
     if spec.strip().lower() == "all":
         return list(range(1, page_count + 1))
 
     wanted = set()
-
-    # Split on commas first: "1-3,88" -> ["1-3", "88"]
     for part in spec.split(","):
         part = part.strip()
         if not part:
             continue
-
         if "-" in part:
-            # A range like "1-10"
             start_text, _, end_text = part.partition("-")
-            start, end = int(start_text), int(end_text)
-            wanted.update(range(start, end + 1))
+            wanted.update(range(int(start_text), int(end_text) + 1))
         else:
-            # A single page like "88"
             wanted.add(int(part))
 
-    # Keep only pages that actually exist, and return them in order.
     return sorted(p for p in wanted if 1 <= p <= page_count)
 
 
-def render_page_images(pdf_path, document_id, page_numbers, dpi=150):
+def render_page_images(doc, document_id, page_numbers, dpi=150):
     """
-    Save the chosen pages as PNG image files.
+    Save chosen pages as PNG files.
 
-    WHY IMAGES AT ALL?
-        A financial statement is a table. Extracted as text, a table becomes a
-        soup of numbers with the rows and columns lost. Claude can read a
-        picture of the page and see the table as a table. That is Month 6, but
-        the images have to exist first.
+    WHY: a financial statement is a table, and extracted as text a table becomes
+    a soup of numbers with the rows and columns lost. Claude can look at a
+    picture of the page and see the table as a table.
 
-    WHAT dpi MEANS
-        Dots per inch -- how much detail. 150 is a good balance: high enough
-        for Claude to read small print in a financial table, low enough that
-        files stay a few hundred KB. 72 would be blurry; 300 quadruples the
-        file size for little gain.
+    dpi is dots per inch -- how much detail. 150 is readable for small print in
+    a financial table while keeping files a few hundred KB.
     """
     written = []
 
-    with pymupdf.open(pdf_path) as doc:
-        for page_number in page_numbers:
-            # Back to 0-based counting for PyMuPDF's internal index.
-            page = doc[page_number - 1]
-
-            # get_pixmap() rasterises the page -- "rasterise" means turning
-            # the PDF's drawing instructions into an actual grid of pixels.
-            pixmap = page.get_pixmap(dpi=dpi)
-
-            # Zero-padded name so files sort correctly in a file browser:
-            # page_009.png comes before page_010.png, but page_9.png does not.
-            filename = f"{document_id}_page_{page_number:03d}.png"
-            output_path = config.IMAGES_DIR / filename
-            pixmap.save(output_path)
-
-            written.append(output_path)
+    for page_number in page_numbers:
+        pixmap = doc[page_number - 1].get_pixmap(dpi=dpi)
+        # Zero-padded so files sort correctly: page_009 before page_010.
+        output_path = config.IMAGES_DIR / f"{document_id}_page_{page_number:03d}.png"
+        pixmap.save(output_path)
+        written.append(output_path)
 
     return written
 
 
 # ---------------------------------------------------------------------------
-# Step 3: save the result
+# Step 3: process one document end to end
 # ---------------------------------------------------------------------------
 
-def save_pages_json(pages, document_id, pdf_path):
-    """
-    Write everything to one JSON file, wrapped in a small envelope of
-    information about the document itself.
+def ingest_document(document, image_spec=None, dpi=150):
+    """Run the whole pipeline for a single prospectus and save its output."""
+    document_id = document["document_id"]
+    market = document["market"]
 
-    Why an envelope instead of a bare list? Because "which file did this come
-    from, and when?" is exactly the question you will ask in four months when
-    something looks wrong.
-    """
-    payload = {
+    print(f"\n{'=' * 74}")
+    print(f"{document_id}   [{market}]   {document['filename']}")
+    print("=" * 74)
+
+    with pymupdf.open(document["path"]) as doc:
+        # --- text ---
+        pages = extract_pages(doc)
+        page_count = len(pages)
+        total_chars = sum(p["char_count"] for p in pages)
+        empty_pages = [p["page"] for p in pages if p["char_count"] == 0]
+
+        print(f"  pages           : {page_count}")
+        print(f"  characters      : {total_chars:,}")
+
+        if empty_pages:
+            print(f"  EMPTY pages     : {len(empty_pages)} -> {empty_pages[:12]}")
+            print("     (no text layer -- probably scanned images, will need OCR)")
+        else:
+            print("  empty pages     : none -- full text layer, no OCR needed")
+
+        # --- printed page numbers ---
+        page_texts = [p["text"] for p in pages]
+        offset, confidence = pagemap.detect_page_offset(page_texts)
+        print(f"  {pagemap.describe(offset, confidence, page_count)}")
+
+        # --- sections ---
+        outline, outline_source = sections.build_outline(doc)
+        print(f"  sections        : {len(outline)} (source: {outline_source})")
+        for section in outline[:4]:
+            print(f"       L{section['level']} p{section['start_page']:>4}  {section['title'][:52]}")
+        if len(outline) > 4:
+            print(f"       ... and {len(outline) - 4} more")
+
+        index = sections.section_index(outline, page_count)
+
+        # --- strip running headers and footers ---
+        # This must happen AFTER the page-offset detection above, because the
+        # page numbers hidden inside those headers are the evidence it needs.
+        furniture = boilerplate.find_boilerplate_lines(page_texts)
+        cleaned_pages = boilerplate.clean_pages(pages, furniture)
+        removed_chars = total_chars - sum(p["char_count"] for p in cleaned_pages)
+        print(f"  boilerplate     : {len(furniture)} repeating line(s) removed "
+              f"({removed_chars:,} chars, {removed_chars / max(total_chars, 1):.1%})")
+
+        # --- chunks ---
+        chunk_list = chunking.chunk_document(
+            cleaned_pages, document_id, market, offset, index
+        )
+        with_printed = sum(1 for c in chunk_list if c["printed_page"] is not None)
+        print(f"  chunks          : {len(chunk_list)} "
+              f"({with_printed} with a printed page number)")
+
+        # --- images ---
+        if image_spec:
+            page_numbers = parse_page_range(image_spec, page_count)
+            written = render_page_images(doc, document_id, page_numbers, dpi=dpi)
+            size_mb = sum(p.stat().st_size for p in written) / (1024 * 1024)
+            print(f"  images          : {len(written)} rendered at {dpi} dpi ({size_mb:.1f} MB)")
+
+    # --- save ---
+    extracted_at = datetime.now(timezone.utc).isoformat()
+
+    pages_payload = {
         "document_id": document_id,
-        "source_file": pdf_path.name,
-        "page_count": len(pages),
-        "extracted_at": datetime.now(timezone.utc).isoformat(),
+        "market": market,
+        "source_file": document["filename"],
+        "page_count": page_count,
+        "page_offset": offset,
+        "page_offset_confidence": round(confidence, 3),
+        "outline_source": outline_source,
+        "extracted_at": extracted_at,
+        "outline": outline,
         "pages": pages,
     }
+    pages_path = config.PAGES_DIR / f"{document_id}.json"
+    _write_json(pages_path, pages_payload)
 
-    output_path = config.PAGES_DIR / f"{document_id}.json"
+    chunks_payload = {
+        "document_id": document_id,
+        "market": market,
+        "chunk_count": len(chunk_list),
+        "extracted_at": extracted_at,
+        "chunks": chunk_list,
+    }
+    chunks_path = config.CHUNKS_DIR / f"{document_id}.json"
+    _write_json(chunks_path, chunks_payload)
 
-    # ensure_ascii=False keeps Arabic and typographic characters readable in
-    # the file instead of turning them into \u escape codes.
-    # indent=2 makes it human-inspectable, which matters more than file size.
-    with open(output_path, "w", encoding="utf-8") as f:
+    print(f"  saved           : {pages_path.name} + {chunks_path.name}")
+
+    # Show one real citation, so the point of all this is visible.
+    if chunk_list:
+        sample = chunk_list[len(chunk_list) // 2]
+        print(f"  sample citation : {chunking.citation_for(sample)}")
+
+    return {"document_id": document_id, "chunks": len(chunk_list),
+            "pages": page_count, "offset": offset, "outline_source": outline_source}
+
+
+def _write_json(path, payload):
+    """
+    ensure_ascii=False keeps typographic and Arabic characters readable in the
+    file rather than turning them into \\u escape codes.
+    indent=2 makes it inspectable, which matters more here than file size.
+    """
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-
-    return output_path
-
-
-# ---------------------------------------------------------------------------
-# Step 4: report what happened
-# ---------------------------------------------------------------------------
-
-def print_summary(pages):
-    """
-    Print a short health check on the extraction.
-
-    The important number is empty_pages. A page with no text is either
-    genuinely blank, or it is a SCANNED IMAGE -- and a scanned page needs OCR,
-    which is a Month 9 problem. Better to find out now than in April.
-    """
-    total_chars = sum(p["char_count"] for p in pages)
-    empty_pages = [p["page"] for p in pages if p["char_count"] == 0]
-    thin_pages = [p["page"] for p in pages if 0 < p["char_count"] < 100]
-
-    print()
-    print(f"  pages extracted : {len(pages)}")
-    print(f"  characters      : {total_chars:,}")
-    print(f"  average per page: {total_chars // max(len(pages), 1):,}")
-
-    if empty_pages:
-        print(f"  EMPTY pages     : {len(empty_pages)} -> {empty_pages[:15]}")
-        print("     (no text at all -- these are probably scanned images,")
-        print("      which will need OCR later)")
-    else:
-        print("  empty pages     : none -- the whole document has a text layer")
-
-    if thin_pages:
-        print(f"  very thin pages : {len(thin_pages)} -> {thin_pages[:15]}")
-        print("     (under 100 characters -- likely section dividers)")
 
 
 # ---------------------------------------------------------------------------
@@ -228,71 +241,53 @@ def print_summary(pages):
 # ---------------------------------------------------------------------------
 
 def main():
-    # argparse builds a proper command-line interface: it handles --flags,
-    # type conversion, and gives you "--help" for free.
     parser = argparse.ArgumentParser(
-        description="Extract text and page images from a prospectus PDF."
+        description="Extract text, structure and citable chunks from prospectus PDFs."
     )
-    parser.add_argument(
-        "--pdf",
-        default=str(config.PDF_PATH),
-        help="path to the PDF (default: prospectus.pdf in the project root)",
-    )
-    parser.add_argument(
-        "--images",
-        metavar="PAGES",
-        help='render pages as PNG: "all", "1-10", or "12,88,91"',
-    )
-    parser.add_argument(
-        "--dpi",
-        type=int,
-        default=150,
-        help="image resolution when rendering (default: 150)",
-    )
+    parser.add_argument("--market", choices=config.MARKETS,
+                        help="process one market only (default: all)")
+    parser.add_argument("--document", help="process one document_id only")
+    parser.add_argument("--images", metavar="PAGES",
+                        help='render pages as PNG: "all", "1-10", or "12,88,91"')
+    parser.add_argument("--dpi", type=int, default=150,
+                        help="image resolution when rendering (default: 150)")
+    parser.add_argument("--list", action="store_true",
+                        help="list the documents found and exit")
     args = parser.parse_args()
 
-    # Windows terminals default to an old character set that cannot display
-    # the curly apostrophes and Arabic text in this document. This affects
-    # printing only -- the extracted data is correct either way.
+    # Windows terminals default to an old character set that cannot display the
+    # curly apostrophes in these documents. This affects PRINTING only -- the
+    # extracted data is correct either way.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
-    from pathlib import Path
-    pdf_path = Path(args.pdf)
+    found = documents.discover_documents()
 
-    if not pdf_path.exists():
-        print(f"ERROR: no PDF found at {pdf_path}")
+    if not found:
+        print("No PDFs found. Expected them in: "
+              + ", ".join(f"{m}/" for m in config.MARKETS))
         sys.exit(1)
+
+    if args.market:
+        found = [d for d in found if d["market"] == args.market]
+    if args.document:
+        found = [d for d in found if d["document_id"] == args.document]
+
+    if args.list:
+        print(f"{len(found)} document(s):")
+        for d in found:
+            print(f"  {d['market']:6}  {d['document_id']:45}  {d['filename']}")
+        return
 
     config.ensure_directories()
 
-    # .stem is the filename without its extension: prospectus.pdf -> prospectus
-    document_id = pdf_path.stem
+    results = [ingest_document(d, image_spec=args.images, dpi=args.dpi)
+               for d in found]
 
-    print(f"Reading {pdf_path.name}  (document_id: {document_id})")
-
-    pages = extract_pages(pdf_path, document_id)
-    print_summary(pages)
-
-    output_path = save_pages_json(pages, document_id, pdf_path)
-    size_kb = output_path.stat().st_size / 1024
-    print()
-    print(f"  saved -> {output_path.relative_to(config.PROJECT_ROOT)}  ({size_kb:,.0f} KB)")
-
-    if args.images:
-        page_numbers = parse_page_range(args.images, len(pages))
-        print()
-        print(f"Rendering {len(page_numbers)} page image(s) at {args.dpi} dpi ...")
-
-        written = render_page_images(pdf_path, document_id, page_numbers, dpi=args.dpi)
-
-        total_mb = sum(p.stat().st_size for p in written) / (1024 * 1024)
-        print(f"  saved {len(written)} image(s) -> "
-              f"{config.IMAGES_DIR.relative_to(config.PROJECT_ROOT)}  "
-              f"({total_mb:.1f} MB total)")
-
-    print()
-    print("Done.")
+    print(f"\n{'=' * 74}")
+    print(f"LIBRARY: {len(results)} document(s), "
+          f"{sum(r['chunks'] for r in results):,} chunks total")
+    print("=" * 74)
 
 
 if __name__ == "__main__":
