@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------------------
+# Secrets -- THE MOST IMPORTANT LINE IN THIS FILE.
+# .env holds your Claude API key. If it ever reaches GitHub, anyone can spend
+# money with your key. .env.example (the safe template) IS committed.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# The virtual environment. Never committed -- it is hundreds of megabytes and
+# is specific to this machine. Anyone cloning the repo recreates it from
+# requirements.txt instead.
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+
+# ---------------------------------------------------------------------------
+# Generated data. All of this can be rebuilt by re-running the ingest script,
+# so storing it in git would just bloat the repository.
+# ---------------------------------------------------------------------------
+data/
+*.json.gz
+
+# ---------------------------------------------------------------------------
+# Python's compiled bytecode cache and test/tooling output.
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Editor and OS clutter.
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
