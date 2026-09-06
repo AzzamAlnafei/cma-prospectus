@@ -43,8 +43,8 @@ def chunk_document(pages, document_id, market, page_offset, section_index):
 
     Every chunk looks like:
 
-        {"chunk_id":     "sukuk-prospectus-p136-c0",
-         "document_id":  "sukuk-prospectus",
+        {"chunk_id":     "sukuk-riyad-bank-en-p136-c0",
+         "document_id":  "sukuk-riyad-bank-en",
          "market":       "sukuk",
          "pdf_page":     136,
          "printed_page": 114,

@@ -35,10 +35,10 @@ def discover_documents():
     """
     Look inside each market folder and return one record per PDF found:
 
-        [{"document_id": "sukuk-prospectus",
+        [{"document_id": "sukuk-riyad-bank-en",
           "market": "sukuk",
-          "path": Path(".../sukuk/prospectus.pdf"),
-          "filename": "prospectus.pdf"}, ...]
+          "path": Path(".../documents/sukuk/riyad_bank_en.pdf"),
+          "filename": "riyad_bank_en.pdf"}, ...]
 
     The market comes from the folder name, so filing a new prospectus is just
     dropping the PDF into sukuk/, tasi/ or nomu/ -- no code change needed.
@@ -49,7 +49,7 @@ def discover_documents():
     documents = []
 
     for market in config.MARKETS:
-        market_dir = config.PROJECT_ROOT / market
+        market_dir = config.DOCUMENTS_DIR / market
 
         if not market_dir.is_dir():
             continue
