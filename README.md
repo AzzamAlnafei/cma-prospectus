@@ -52,7 +52,7 @@ Output goes to `data/` (git-ignored — regenerate by re-running the script).
 
 | Path | Contents |
 |---|---|
-| `sukuk/`, `tasi/`, `nomu/` | Prospectus PDFs — the folder sets the market |
+| `documents/{sukuk,tasi,nomu}/` | Prospectus PDFs — the folder sets the market |
 | `src/config.py` | All paths and settings in one place |
 | `src/documents.py` | Finds the PDFs, gives each a stable id |
 | `src/ingest.py` | Orchestrates ingestion; text and page images |
@@ -68,13 +68,16 @@ Output goes to `data/` (git-ignored — regenerate by re-running the script).
 ## The library
 
 The CMA runs three offering regimes, each with its own required disclosures.
-A PDF's market is set by the folder it sits in.
+A PDF's market is set by the folder it sits in, under `documents/`.
 
-| Market | Document | Pages | Chunks |
-|---|---|---|---|
-| `sukuk/` | Riyad Bank Sukuk Offering Prospectus | 195 | 889 |
-| `tasi/` | Naseej International Trading — Rights Issue | 258 | 1,219 |
-| `nomu/` | Jamjoom Fashion Trading Company | 408 | 1,305 |
+| Market | Document | `document_id` | Pages | Chunks |
+|---|---|---|---|---|
+| sukuk | Riyad Bank Sukuk Offering | `sukuk-riyad-bank-en` | 195 | 889 |
+| tasi | Naseej International Rights Issue | `tasi-naseej-international-en` | 258 | 1,219 |
+| nomu | Jamjoom Fashion Trading | `nomu-jamjoom-fashion-trading-company-en` | 408 | 1,305 |
+
+Adding a prospectus is just dropping a PDF into `documents/<market>/` and
+re-running ingestion — no code change.
 
 **Page numbers.** The number printed on a page does not match the PDF page
 count — the gap is 22, 41 and 43 respectively, caused by unnumbered front

@@ -35,6 +35,21 @@ import re
 import sys
 import textwrap
 
+# ---------------------------------------------------------------------------
+# Let this file be run BOTH ways:
+#     python -m src.search          <- the normal way
+#     python src/search.py          <- e.g. the Run button in VS Code
+#
+# Running a file by its path puts that file's OWN folder (src/) at the front
+# of Python's import path, so "from src import ..." fails -- Python is stood
+# inside src/ looking for a folder called src. Adding the project root fixes
+# it. __package__ is empty only when the file was run directly, so this does
+# nothing in the normal case.
+# ---------------------------------------------------------------------------
+if __name__ == "__main__" and not __package__:
+    import pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
 from src import chunks as chunking
 from src import config
 

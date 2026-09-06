@@ -23,6 +23,11 @@ from dotenv import load_dotenv
 #   .parent     -> the project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# The PDF library. Grouping the market folders under one parent keeps the
+# project root readable as the project grows -- src/ is code, documents/ is
+# input, data/ is generated output.
+DOCUMENTS_DIR = PROJECT_ROOT / "documents"
+
 DATA_DIR = PROJECT_ROOT / "data"
 PAGES_DIR = DATA_DIR / "pages"      # extracted text, as JSON
 CHUNKS_DIR = DATA_DIR / "chunks"    # chunked text with citations, as JSON

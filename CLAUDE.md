@@ -110,9 +110,11 @@ decides which checklist and which indicators apply:
 | **nomu** | the Parallel Market, smaller companies | lighter than TASI, and qualified-investor restrictions |
 
 Nothing may hard-code one market. The market is taken from the folder a PDF
-sits in (`sukuk/`, `tasi/`, `nomu/`) rather than guessed from the text: whoever
-files the document already knows which market it belongs to, so inferring it
-would add a chance of being wrong for no benefit.
+sits in — `documents/sukuk/`, `documents/tasi/`, `documents/nomu/` — rather
+than guessed from the text: whoever files the document already knows which
+market it belongs to, so inferring it would add a chance of being wrong for no
+benefit. Adding a prospectus is dropping a PDF into the right folder and
+re-running ingestion; no code changes.
 
 **The library**
 
